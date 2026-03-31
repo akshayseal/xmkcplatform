@@ -1,1 +1,45 @@
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>XM Knowledge Club</title>
+<link rel="stylesheet" href="/css/style.css">
+<style>
+body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#534AB7}
+.landing{text-align:center;padding:40px 20px}
+.logo{font-size:64px;font-weight:800;color:#fff;letter-spacing:-2px}
+.tagline{font-size:18px;color:rgba(255,255,255,.8);margin:8px 0 40px}
+.portal-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:600px;margin:0 auto}
+.portal-card{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);border-radius:16px;padding:28px 20px;cursor:pointer;transition:all .2s;text-decoration:none;display:block}
+.portal-card:hover{background:rgba(255,255,255,.25);transform:translateY(-2px)}
+.portal-icon{font-size:32px;margin-bottom:10px}
+.portal-name{font-size:16px;font-weight:700;color:#fff;margin-bottom:4px}
+.portal-sub{font-size:12px;color:rgba(255,255,255,.65)}
+@media(max-width:480px){.portal-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="landing">
+  <div class="logo">XM</div>
+  <div class="tagline">Knowledge Club — Learning Platform</div>
+  <div class="portal-grid">
+    <a href="/student" class="portal-card">
+      <div class="portal-icon">🎓</div>
+      <div class="portal-name">Student</div>
+      <div class="portal-sub">Take quizzes & view progress</div>
+    </a>
+    <a href="/teacher" class="portal-card">
+      <div class="portal-icon">📚</div>
+      <div class="portal-name">Teacher</div>
+      <div class="portal-sub">Monitor class performance</div>
+    </a>
+    <a href="/admin" class="portal-card">
+      <div class="portal-icon">⚙️</div>
+      <div class="portal-name">Admin</div>
+      <div class="portal-sub">Manage platform & content</div>
+    </a>
+  </div>
+</div>
+</body>
+</html>

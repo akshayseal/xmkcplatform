@@ -1,1 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>XM Knowledge Club — Student</title>
+<link rel="stylesheet" href="/css/style.css">
+<style>
+.quiz-page{max-width:700px;margin:0 auto;padding:24px}
+.module-card{background:#fff;border:1px solid #e8e6e0;border-radius:12px;padding:16px 20px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.module-card-left{flex:1}
+.module-name{font-size:14px;font-weight:600;color:#1a1a1a}
+.module-subject{font-size:12px;color:#888;margin-top:2px}
+.score-ring{width:52px;height:52px;position:relative;flex-shrink:0}
+.score-ring svg{width:52px;height:52px}
+.score-ring-center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+</style>
+</head>
+<body>
+<div id="login-screen" style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#534AB7">
+  <div style="background:#fff;border-radius:16px;padding:40px 36px;width:100%;max-width:380px">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="font-size:36px;font-weight:800;color:#534AB7">XM</div>
+      <div style="font-size:13px;color:#888;margin-top:4px">Knowledge Club</div>
+      <div style="font-size:16px;font-weight:600;color:#1a1a1a;margin-top:8px">Student Login</div>
+    </div>
+    <div id="login-error" class="alert alert-error" style="display:none"></div>
+    <div class="form-group" style="margin-bottom:14px"><label>Student ID</label><input id="l-user" placeholder="Your student ID" autocomplete="username"></div>
+    <div class="form-group" style="margin-bottom:20px"><label>Password</label><input id="l-pass" type="password" placeholder="••••••••" autocomplete="current-password"></div>
+    <button class="btn btn-primary" style="width:100%" onclick="doLogin()">Sign in</button>
+    <div style="text-align:center;margin-top:16px"><a href="/" style="font-size:12px;color:#888">← Back to portal selection</a></div>
+  </div>
+</div>
 
+<div id="app" style="display:none">
+  <div class="topbar">
+    <div style="display:flex;align-items:center">
+      <div class="topbar-logo">XM</div>
+      <div class="topbar-title">Knowledge Club</div>
+    </div>
+    <div class="topbar-right">
+      <span class="topbar-user" id="user-name"></span>
+      <button class="btn btn-sm" style="color:#fff;border-color:rgba(255,255,255,.3);background:transparent" onclick="logout()">Logout</button>
+    </div>
+  </div>
+  <div class="nav" id="nav"></div>
+  <div id="page"></div>
+</div>
+
+<div id="modal-root"></div>
+<div id="quiz-root" style="display:none;position:fixed;inset:0;background:#f5f4f0;overflow-y:auto;z-index:500"></div>
+
+<script>
+const SUBJECTS={'Current Affairs':'#534AB7','Science & Nature':'#185FA5','History & Geography':'#0F6E56','Arts, Culture & Sports':'#854F0B'};
+const BANDS=[{min:85,name:'Knowledge Champion',color:'#085041',cls:'b-champ'},{min:70,name:'Knowledge Expert',color:'#0C447C',cls:'b-expert'},{min:55,name:'Knowledge Builder',color:'#633806',cls:'b-builder'},{min:40,name:'Knowledge Explorer',color:'#3C3489',cls:'b-explorer'},{min:0,name:'Knowledge Seeker',color:'#712B13',cls:'b-seeker'}];
+function getBand(q){return BANDS.find(b=>q>=b.min)||BANDS[BANDS.length-1]}
+
+let ME = null, currentTab = 'dashboard';
+
+async function api(method,url,body){
+  const r=await fetch(url,{method,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
+  return r.json();
+}
+
+async function doLogin(){
+  const username=document.getElementById('l-user').value.trim();
+  const password=document.getElementById('l-pass').value;
+  const err=document.getElementById('login-error');
+  err.style.display='none';
+  const d=await api('POST','/api/auth/login',{username,password,role:'student'});
+  if(d.ok){ME=d;init();}
+  else{err.textContent=d.error||'Login failed';err.style.display='block';}
+}
+document.addEventListener('DOMContentLoaded',async()=>{
+  document.getElementById('l-pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+  const d=await api('GET','/api/auth/me');
+  if(d.id){ME=d;init();}
+});
+
+function init(){
+  document.getElementById('login-screen').style.display='none';
+  document.getElementById('app').style.display='block';
+  document.getElementById('user-name').textContent=ME.name;
+  render();
+}
+async function logout(){await api('POST','/api/auth/logout');location.reload();}
+
+const TABS=[
+  {id:'dashboard',label:'Dashboard',render:renderDashboard},
+  {id:'quizzes',label:'My Quizzes',render:renderQuizzes},
+  {id:'leaderboard',label:'Leaderboard',render:renderLeaderboard},
+  {id:'report',label:'My Report Card',render:renderReport},
+];
+
+function renderNav(){
+  document.getElementById('nav').innerHTML=TABS.map(t=>
+    `<button class="nav-btn ${t.id===currentTab?'active':''}" onclick="navigate('${t.id}')">${t.label}</button>`).join('');
+}
+function navigate(tab){currentTab=tab;render();}
+function render(){renderNav();TABS.find(t=>t.id===currentTab)?.render();}
+
+// ── DASHBOARD ──────────────────────────────────────────────────────────────────
+async function renderDashboard(){
+  document.getElementById('page').innerHTML=`<div class="page"><div style="text-align:center;padding:40px"><span class="spinner"></span></div></div>`;
+  const [qq1,qq2,attempts] = await Promise.all([
+    api('GET',`/api/students/${ME.id}/qq?term=1`),
+    api('GET',`/api/students/${ME.id}/qq?term=2`),
+    api('GET',`/api/students/${ME.id}/attempts`),
+  ]);
+  const qq = qq1.qq !== null ? qq1 : qq2;
+  const band = qq.qq !== null ? getBand(qq.qq) : null;
+  const completed = attempts.filter(a=>a.status==='completed').length;
+  const CIRC=2*Math.PI*38;
+  document.getElementById('page').innerHTML=`<div class="page">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+      <div class="card" style="display:flex;align-items:center;gap:20px">
+        ${qq.qq!==null?`
+        <div class="ring-wrap" style="width:90px;height:90px">
+          <svg viewBox="0 0 90 90" width="90" height="90">
+            <circle cx="45" cy="45" r="38" fill="none" stroke="#e8e6e0" stroke-width="7"/>
+            <circle cx="45" cy="45" r="38" fill="none" stroke="${band.color}" stroke-width="7"
+              stroke-dasharray="${CIRC.toFixed(1)}" stroke-dashoffset="${(CIRC*(1-qq.qq/100)).toFixed(1)}"
+              stroke-linecap="round" transform="rotate(-90 45 45)"/>
+          </svg>
+          <div class="ring-center"><div style="font-size:22px;font-weight:700">${qq.qq}</div><div style="font-size:10px;color:#aaa">/100</div></div>
+        </div>
+        <div>
+          <div style="font-size:22px;font-weight:700;color:${band.color}">${band.name}</div>
+          <div style="font-size:13px;color:#888;margin-top:2px">Quiz Quotient</div>
+          <button class="btn btn-sm btn-primary" style="margin-top:8px" onclick="navigate('report')">View report card</button>
+        </div>`:
+        `<div style="color:#888;font-size:14px">Complete a quiz to see your QQ score!</div>`}
+      </div>
+      <div class="card">
+        <div class="card-title">Your progress</div>
+        <div class="stat-grid" style="grid-template-columns:1fr 1fr;gap:10px;margin-bottom:0">
+          <div class="stat-card"><div class="stat-val" style="font-size:22px">${completed}</div><div class="stat-lbl">Quizzes done</div></div>
+          <div class="stat-card"><div class="stat-val" style="font-size:22px">${12-completed}</div><div class="stat-lbl">Remaining</div></div>
+        </div>
+      </div>
+    </div>
+    ${qq.qq!==null?`
+    <div class="card">
+      <div class="card-title">Subject performance</div>
+      ${Object.keys(SUBJECTS).map(sub=>`
+        <div class="pb-row">
+          <div class="pb-labels"><span>${sub}</span><span style="font-weight:600">${qq.subjectScores?.[sub]||0}%</span></div>
+          <div class="pb-track"><div class="pb-fill" style="width:${qq.subjectScores?.[sub]||0}%;background:${SUBJECTS[sub]}"></div></div>
+        </div>`).join('')}
+    </div>`:''}
+    <div class="card">
+      <div class="card-title">Recent quiz results</div>
+      ${attempts.filter(a=>a.status==='completed').slice(-5).reverse().map(a=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f0ede8;font-size:13px">
+          <div><div style="font-weight:500">${a.module_name}</div><div style="font-size:11px;color:#888">${a.subject}</div></div>
+          <div style="text-align:right"><div style="font-weight:700;color:#534AB7">${a.score}/${a.max_score}</div>
+          <div style="font-size:11px;color:#888">${Math.round((a.score/a.max_score)*100)}%</div></div>
+        </div>`).join('')||'<div class="empty" style="padding:20px">No quizzes completed yet</div>'}
+    </div>
+  </div>`;
+}
+
+// ── QUIZZES ────────────────────────────────────────────────────────────────────
+async function renderQuizzes(){
+  document.getElementById('page').innerHTML=`<div class="page"><div style="text-align:center;padding:40px"><span class="spinner"></span></div></div>`;
+  const [modules, attempts] = await Promise.all([
+    api('GET','/api/modules'),
+    api('GET',`/api/students/${ME.id}/attempts`),
+  ]);
+  const attemptMap = {};
+  attempts.forEach(a=>{ attemptMap[a.module_id]=a; });
+
+  const renderTerm = (term) => modules.filter(m=>m.term===term).map(m=>{
+    const attempt = attemptMap[m.id];
+    const done = attempt?.status==='completed';
+    const pct = done ? Math.round((attempt.score/attempt.max_score)*100) : null;
+    const CIRC=2*Math.PI*22;
+    return `<div class="module-card">
+      <div class="module-card-left">
+        <div class="module-name">Module ${m.id}: ${m.name}</div>
+        <div class="module-subject">${m.subject}</div>
+        ${done?`<div style="font-size:11px;color:#0F6E56;margin-top:4px;font-weight:500">✓ Completed · ${attempt.score}/${attempt.max_score} correct</div>`:''}
+      </div>
+      ${done?`
+        <div class="score-ring">
+          <svg viewBox="0 0 52 52"><circle cx="26" cy="26" r="22" fill="none" stroke="#e8e6e0" stroke-width="5"/>
+          <circle cx="26" cy="26" r="22" fill="none" stroke="${pct>=70?'#0F6E56':pct>=50?'#854F0B':'#712B13'}" stroke-width="5"
+            stroke-dasharray="${CIRC.toFixed(1)}" stroke-dashoffset="${(CIRC*(1-pct/100)).toFixed(1)}"
+            stroke-linecap="round" transform="rotate(-90 26 26)"/></svg>
+          <div class="score-ring-center" style="color:${pct>=70?'#0F6E56':pct>=50?'#854F0B':'#712B13'}">${pct}%</div>
+        </div>`:
+        m.quiz_open?
+        `<button class="btn btn-primary btn-sm" onclick="startQuiz(${m.id})">Start quiz</button>`:
+        `<span class="badge b-closed">Locked</span>`}
+    </div>`;
+  }).join('');
+
+  document.getElementById('page').innerHTML=`<div class="page">
+    <div class="card"><div class="card-title">Term 1 — Modules 1–6</div>${renderTerm(1)}</div>
+    <div class="card"><div class="card-title">Term 2 — Modules 7–12</div>${renderTerm(2)}</div>
+  </div>`;
+}
+
+// ── QUIZ ENGINE ────────────────────────────────────────────────────────────────
+let quizState = null;
+
+async function startQuiz(moduleId){
+  const d = await api('POST','/api/quiz/start',{module_id:moduleId});
+  if(d.error){showToast(d.error,'error');return;}
+  quizState = { attempt_id:d.attempt_id, questions:d.questions, current:0, answers:{}, startTime:Date.now() };
+  document.getElementById('quiz-root').style.display='block';
+  document.getElementById('app').style.display='none';
+  showQuestion();
+}
+
+function showQuestion(){
+  const q = quizState.questions[quizState.current];
+  if(!q){finishQuiz();return;}
+  const total = quizState.questions.length;
+  const num = quizState.current+1;
+  const opts = ['A','B','C','D'].filter((_,i)=>q[`option_${['a','b','c','d'][i]}`])
+    .map(letter=>`<button class="quiz-option" id="opt-${letter}" onclick="selectAnswer('${letter}')">${letter}. ${q[`option_${letter.toLowerCase()}`]}</button>`).join('');
+
+  let timeLeft = q.time_limit_sec || 30;
+  document.getElementById('quiz-root').innerHTML=`
+    <div class="quiz-page">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div style="font-size:13px;color:#888">Question ${num} of ${total}</div>
+        <div class="quiz-timer" id="qtimer">${timeLeft}s</div>
+      </div>
+      <div class="quiz-progress"><div class="quiz-progress-fill" style="width:${(num/total)*100}%"></div></div>
+      <div class="quiz-question">${q.question}</div>
+      <div id="quiz-options">${opts}</div>
+      <div id="quiz-feedback" style="margin-top:16px;min-height:40px"></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:20px">
+        <button class="btn" id="next-btn" style="display:none" onclick="nextQuestion()">Next →</button>
+      </div>
+    </div>`;
+
+  quizState.questionStart = Date.now();
+  quizState.timer = setInterval(()=>{
+    timeLeft--;
+    const el = document.getElementById('qtimer');
+    if(el){ el.textContent=timeLeft+'s'; if(timeLeft<=5)el.classList.add('urgent'); }
+    if(timeLeft<=0){ clearInterval(quizState.timer); autoSubmit(); }
+  },1000);
+}
+
+async function selectAnswer(letter){
+  clearInterval(quizState.timer);
+  const q = quizState.questions[quizState.current];
+  const timeSec = Math.round((Date.now()-quizState.questionStart)/1000);
+  document.querySelectorAll('.quiz-option').forEach(b=>b.disabled=true);
+  document.getElementById(`opt-${letter}`)?.classList.add('selected');
+
+  const d = await api('POST','/api/quiz/answer',{
+    attempt_id:quizState.attempt_id, question_id:q.id, answer:letter, time_sec:timeSec
+  });
+
+  const fb = document.getElementById('quiz-feedback');
+  if(d.correct){
+    document.getElementById(`opt-${letter}`)?.classList.replace('selected','correct');
+    if(fb) fb.innerHTML=`<div style="color:#085041;font-weight:500;font-size:14px">✓ Correct!</div>`;
+  } else {
+    document.getElementById(`opt-${letter}`)?.classList.replace('selected','wrong');
+    if(fb) fb.innerHTML=`<div style="color:#712B13;font-weight:500;font-size:14px">✗ Incorrect</div>`;
+  }
+  const nb = document.getElementById('next-btn');
+  if(nb) nb.style.display='block';
+  quizState.answers[q.id] = letter;
+}
+
+async function autoSubmit(){
+  const q = quizState.questions[quizState.current];
+  document.querySelectorAll('.quiz-option').forEach(b=>b.disabled=true);
+  await api('POST','/api/quiz/answer',{attempt_id:quizState.attempt_id,question_id:q.id,answer:null,time_sec:q.time_limit_sec});
+  const fb=document.getElementById('quiz-feedback');
+  if(fb) fb.innerHTML=`<div style="color:#888;font-size:14px">Time's up — moving on</div>`;
+  const nb=document.getElementById('next-btn');
+  if(nb) nb.style.display='block';
+}
+
+function nextQuestion(){
+  quizState.current++;
+  showQuestion();
+}
+
+async function finishQuiz(){
+  document.getElementById('quiz-root').innerHTML=`<div class="quiz-page" style="text-align:center;padding:60px 20px"><span class="spinner"></span><div style="margin-top:12px;color:#888">Calculating your score…</div></div>`;
+  const d = await api('POST','/api/quiz/finish',{attempt_id:quizState.attempt_id});
+  const pct = Math.round((d.score/d.max_score)*100);
+  const col = pct>=70?'#0F6E56':pct>=50?'#854F0B':'#712B13';
+  document.getElementById('quiz-root').innerHTML=`
+    <div class="quiz-page" style="text-align:center;padding:60px 20px">
+      <div style="font-size:72px;font-weight:800;color:${col}">${pct}%</div>
+      <div style="font-size:20px;font-weight:600;margin:8px 0">${d.score} / ${d.max_score} correct</div>
+      <div style="color:#888;margin-bottom:32px">${d.correct} right answers out of ${d.total} questions</div>
+      <div style="display:flex;gap:12px;justify-content:center">
+        <button class="btn btn-primary" onclick="exitQuiz()">Back to my quizzes</button>
+        <button class="btn" onclick="navigate('dashboard');exitQuiz()">View dashboard</button>
+      </div>
+    </div>`;
+}
+
+function exitQuiz(){
+  document.getElementById('quiz-root').style.display='none';
+  document.getElementById('app').style.display='block';
+  render();
+}
+
+// ── LEADERBOARD ────────────────────────────────────────────────────────────────
+async function renderLeaderboard(){
+  document.getElementById('page').innerHTML=`<div class="page"><div style="text-align:center;padding:40px"><span class="spinner"></span></div></div>`;
+  const [classLB, schoolLB] = await Promise.all([
+    api('GET',`/api/leaderboard?scope=class&scope_value=${ME.class||''}`),
+    api('GET',`/api/leaderboard?scope=school`),
+  ]);
+  const medals=['🥇','🥈','🥉'];
+  const renderLB=(list)=>list.length?list.slice(0,20).map((s,i)=>`
+    <div class="leaderboard-row">
+      <div class="rank-num">${i<3?medals[i]:`#${i+1}`}</div>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:${s.id==ME.id?700:500};color:${s.id==ME.id?'#534AB7':'#1a1a1a'}">${s.name}${s.id==ME.id?' (you)':''}</div>
+        <div style="font-size:11px;color:#aaa">Class ${s.class} · ${s.school}</div>
+      </div>
+      <span class="badge ${s.band.cls}">${s.qq}/100</span>
+    </div>`).join(''):`<div class="empty">No rankings yet</div>`;
+
+  document.getElementById('page').innerHTML=`<div class="page">
+    <div class="card"><div class="card-title">Class ${ME.class} leaderboard</div>${renderLB(classLB)}</div>
+    <div class="card"><div class="card-title">School leaderboard</div>${renderLB(schoolLB)}</div>
+  </div>`;
+}
+
+// ── REPORT CARD ────────────────────────────────────────────────────────────────
+async function renderReport(){
+  document.getElementById('page').innerHTML=`<div class="page">
+    <div style="display:flex;gap:12px;margin-bottom:14px;align-items:center">
+      <select id="rp-term" onchange="renderReport()" style="padding:7px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px">
+        <option value="1">Term 1</option><option value="2">Term 2</option>
+      </select>
+      <button class="btn btn-primary" onclick="window.open('/api/students/${ME.id}/report-card?term='+document.getElementById('rp-term').value,'_blank')">Download PDF</button>
+    </div>
+    <div id="rc-area"><div style="text-align:center;padding:40px"><span class="spinner"></span></div></div>
+  </div>`;
+  const term = document.getElementById('rp-term')?.value||1;
+  const qq = await api('GET',`/api/students/${ME.id}/qq?term=${term}`);
+  const area = document.getElementById('rc-area');
+  if(!qq||qq.qq===null){area.innerHTML=`<div class="card"><div class="empty">No quiz results for Term ${term} yet. Complete some quizzes first!</div></div>`;return;}
+  const band=getBand(qq.qq);
+  const CIRC=2*Math.PI*42;
+  area.innerHTML=`<div class="card">
+    <div style="display:flex;align-items:center;gap:20px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #e8e6e0">
+      <div class="ring-wrap" style="width:96px;height:96px">
+        <svg viewBox="0 0 96 96" width="96" height="96">
+          <circle cx="48" cy="48" r="42" fill="none" stroke="#e8e6e0" stroke-width="7"/>
+          <circle cx="48" cy="48" r="42" fill="none" stroke="${band.color}" stroke-width="7"
+            stroke-dasharray="${CIRC.toFixed(1)}" stroke-dashoffset="${(CIRC*(1-qq.qq/100)).toFixed(1)}"
+            stroke-linecap="round" transform="rotate(-90 48 48)"/>
+        </svg>
+        <div class="ring-center"><div style="font-size:24px;font-weight:700">${qq.qq}</div><div style="font-size:10px;color:#aaa">/100</div></div>
+      </div>
+      <div>
+        <div style="font-size:20px;font-weight:700;color:${band.color}">${band.name}</div>
+        <div style="font-size:13px;color:#888;margin-top:3px">Quiz Quotient — Term ${term}</div>
+      </div>
+    </div>
+    ${Object.keys(SUBJECTS).map(sub=>`
+      <div class="pb-row">
+        <div class="pb-labels"><span>${sub}</span><span style="font-weight:600">${qq.subjectScores?.[sub]||0}%</span></div>
+        <div class="pb-track"><div class="pb-fill" style="width:${qq.subjectScores?.[sub]||0}%;background:${SUBJECTS[sub]}"></div></div>
+      </div>`).join('')}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px">
+      <div class="stat-card"><div class="stat-val" style="font-size:20px">${qq.modulesCompleted}/${qq.totalModules}</div><div class="stat-lbl">Modules done</div></div>
+      <div class="stat-card"><div class="stat-val" style="font-size:20px">${qq.participation}%</div><div class="stat-lbl">Participation</div></div>
+      <div class="stat-card"><div class="stat-val" style="font-size:20px">${qq.speed}%</div><div class="stat-lbl">Speed score</div></div>
+      <div class="stat-card"><div class="stat-val" style="font-size:20px">${qq.spread}%</div><div class="stat-lbl">Knowledge Spread</div></div>
+    </div>
+  </div>`;
+}
+
+function showToast(msg,type='success'){
+  const d=document.createElement('div');
+  d.className=`alert alert-${type}`;
+  d.style.cssText='position:fixed;top:16px;right:16px;z-index:9999;min-width:200px;box-shadow:0 4px 12px rgba(0,0,0,.15)';
+  d.textContent=msg;
+  document.body.appendChild(d);
+  setTimeout(()=>d.remove(),3500);
+}
+</script>
+</body>
+</html>

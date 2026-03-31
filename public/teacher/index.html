@@ -1,1 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>XM Knowledge Club — Teacher</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div id="login-screen" style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#0C447C">
+  <div style="background:#fff;border-radius:16px;padding:40px 36px;width:100%;max-width:380px">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="font-size:36px;font-weight:800;color:#0C447C">XM</div>
+      <div style="font-size:13px;color:#888;margin-top:4px">Knowledge Club</div>
+      <div style="font-size:16px;font-weight:600;color:#1a1a1a;margin-top:8px">Teacher Login</div>
+    </div>
+    <div id="login-error" class="alert alert-error" style="display:none"></div>
+    <div class="form-group" style="margin-bottom:14px"><label>Username</label><input id="l-user" placeholder="Teacher username" autocomplete="username"></div>
+    <div class="form-group" style="margin-bottom:20px"><label>Password</label><input id="l-pass" type="password" placeholder="••••••••"></div>
+    <button class="btn btn-primary" style="width:100%;background:#0C447C;border-color:#0C447C" onclick="doLogin()">Sign in</button>
+    <div style="text-align:center;margin-top:16px"><a href="/" style="font-size:12px;color:#888">← Back to portal selection</a></div>
+  </div>
+</div>
 
+<div id="app" style="display:none">
+  <div class="topbar" style="background:#0C447C">
+    <div style="display:flex;align-items:center">
+      <div class="topbar-logo">XM</div>
+      <div class="topbar-title">Knowledge Club — Teacher</div>
+    </div>
+    <div class="topbar-right">
+      <span class="topbar-user" id="user-name"></span>
+      <button class="btn btn-sm" style="color:#fff;border-color:rgba(255,255,255,.3);background:transparent" onclick="logout()">Logout</button>
+    </div>
+  </div>
+  <div class="nav" id="nav"></div>
+  <div id="page"></div>
+</div>
+<div id="modal-root"></div>
+
+<script>
+const SUBJECTS={'Current Affairs':'#534AB7','Science & Nature':'#185FA5','History & Geography':'#0F6E56','Arts, Culture & Sports':'#854F0B'};
+const BANDS=[{min:85,name:'Knowledge Champion',color:'#085041',cls:'b-champ'},{min:70,name:'Knowledge Expert',color:'#0C447C',cls:'b-expert'},{min:55,name:'Knowledge Builder',color:'#633806',cls:'b-builder'},{min:40,name:'Knowledge Explorer',color:'#3C3489',cls:'b-explorer'},{min:0,name:'Knowledge Seeker',color:'#712B13',cls:'b-seeker'}];
+function getBand(q){return BANDS.find(b=>q>=b.min)||BANDS[BANDS.length-1]}
+
+let ME=null, currentTab='dashboard', _students=[], _term=1;
+
+async function api(method,url,body){
+  const r=await fetch(url,{method,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
+  return r.json();
+}
+async function doLogin(){
+  const username=document.getElementById('l-user').value.trim();
+  const password=document.getElementById('l-pass').value;
+  const err=document.getElementById('login-error');
+  err.style.display='none';
+  const d=await api('POST','/api/auth/login',{username,password,role:'teacher'});
+  if(d.ok){ME=d;init();}
+  else{err.textContent=d.error||'Login failed';err.style.display='block';}
+}
+document.addEventListener('DOMContentLoaded',async()=>{
+  document.getElementById('l-pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+  const d=await api('GET','/api/auth/me');
+  if(d.id){ME=d;init();}
+});
+function init(){
+  document.getElementById('login-screen').style.display='none';
+  document.getElementById('app').style.display='block';
+  document.getElementById('user-name').textContent=ME.name;
+  render();
+}
+async function logout(){await api('POST','/api/auth/logout');location.reload();}
+
+const TABS=[
+  {id:'dashboard',label:'Dashboard',render:renderDashboard},
+  {id:'students',label:'My Students',render:renderStudents},
+  {id:'leaderboard',label:'Leaderboard',render:renderLeaderboard},
+];
+function renderNav(){
+  document.getElementById('nav').innerHTML=TABS.map(t=>
+    `<button class="nav-btn ${t.id===currentTab?'active':''}" onclick="navigate('${t.id}')">${t.label}</button>`).join('');
+}
+function navigate(tab){currentTab=tab;render();}
+function render(){renderNav();TABS.find(t=>t.id===currentTab)?.render();}
+
+async function renderDashboard(){
+  document.getElementById('page').innerHTML=`<div class="page"><div style="text-align:center;padding:40px"><span class="spinner"></span></div></div>`;
+  _students = await api('GET','/api/students');
+  const qqData = await Promise.all(_students.map(s=>api('GET',`/api/students/${s.id}/qq?term=${_term}`)));
+  const withQQ = _students.map((s,i)=>({...s,qq:qqData[i]})).filter(s=>s.qq?.qq!==null);
+  const avg = withQQ.length ? Math.round(withQQ.reduce((a,s)=>a+s.qq.qq,0)/withQQ.length) : null;
+  const topStudent = withQQ.sort((a,b)=>b.qq.qq-a.qq.qq)[0];
+
+  document.getElementById('page').innerHTML=`<div class="page">
+    <div class="stat-grid">
+      <div class="stat-card"><div class="stat-val">${_students.length}</div><div class="stat-lbl">Students</div></div>
+      <div class="stat-card"><div class="stat-val">${withQQ.length}</div><div class="stat-lbl">With quiz results</div></div>
+      <div class="stat-card"><div class="stat-val">${avg||'—'}</div><div class="stat-lbl">Class avg QQ</div></div>
+      <div class="stat-card"><div class="stat-val">${topStudent?.name?.split(' ')[0]||'—'}</div><div class="stat-lbl">Top performer</div></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div class="card-title" style="margin-bottom:0">Class overview — Term ${_term}</div>
+        <select onchange="_term=parseInt(this.value);renderDashboard()" style="padding:6px 10px;border:1px solid #ddd;border-radius:8px;font-size:12px">
+          <option value="1" ${_term===1?'selected':''}>Term 1</option>
+          <option value="2" ${_term===2?'selected':''}>Term 2</option>
+        </select>
+      </div>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Student</th><th>Class</th><th>Group</th><th>Modules done</th><th>QQ Score</th><th>Band</th><th></th></tr></thead>
+        <tbody>${_students.map((s,i)=>{
+          const qq=qqData[i];
+          const band=qq?.qq!==null?getBand(qq.qq):null;
+          return `<tr>
+            <td style="font-weight:500">${s.name}</td>
+            <td>${s.class}</td>
+            <td><span class="badge b-g${s.grp}">G${s.grp}</span></td>
+            <td>${qq?.modulesCompleted||0}/${qq?.totalModules||6}</td>
+            <td>${qq?.qq!==null?`<span style="font-weight:700;color:${band.color}">${qq.qq}</span>`:'<span style="color:#aaa">—</span>'}</td>
+            <td>${band?`<span class="badge ${band.cls}">${band.name}</span>`:'—'}</td>
+            <td><div class="btn-group">
+              <button class="btn btn-xs" onclick="viewStudent(${s.id},'${s.name}')">Details</button>
+              <button class="btn btn-xs" onclick="window.open('/api/students/${s.id}/report-card?term=${_term}','_blank')">Report</button>
+            </div></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>
+    </div>
+  </div>`;
+}
+
+async function renderStudents(){
+  document.getElementById('page').innerHTML=`<div class="page"><div style="text-align:center;padding:40px"><span class="spinner"></span></div></div>`;
+  _students = await api('GET','/api/students');
+  document.getElementById('page').innerHTML=`<div class="page">
+    <div class="card">
+      <div class="card-title">${_students.length} students in your class</div>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Name</th><th>Class</th><th>Group</th><th>School</th><th>Term 1 QQ</th><th>Term 2 QQ</th><th></th></tr></thead>
+        <tbody id="stbl"></tbody>
+      </table></div>
+    </div>
+  </div>`;
+  const tbody=document.getElementById('stbl');
+  tbody.innerHTML=_students.map(s=>`<tr>
+    <td style="font-weight:500">${s.name}</td><td>${s.class}</td>
+    <td><span class="badge b-g${s.grp}">G${s.grp}</span></td>
+    <td>${s.school_name}</td>
+    <td id="t1-${s.id}"><span class="spinner"></span></td>
+    <td id="t2-${s.id}"><span class="spinner"></span></td>
+    <td><div class="btn-group">
+      <button class="btn btn-xs" onclick="viewStudent(${s.id},'${s.name}')">Details</button>
+      <button class="btn btn-xs" onclick="addComment(${s.id},'${s.name}')">Comment</button>
+      <button class="btn btn-xs" onclick="window.open('/api/students/${s.id}/report-card?term=1','_blank')">Report</button>
+    </div></td>
+  </tr>`).join('');
+
+  _students.forEach(s=>{
+    ['1','2'].forEach(t=>{
+      api('GET',`/api/students/${s.id}/qq?term=${t}`).then(qq=>{
+        const el=document.getElementById(`t${t}-${s.id}`);
+        if(!el)return;
+        if(qq?.qq!==null){const b=getBand(qq.qq);el.innerHTML=`<span class="badge ${b.cls}">${qq.qq}</span>`;}
+        else el.innerHTML='<span style="color:#aaa">—</span>';
+      });
+    });
+  });
+}
+
+async function renderLeaderboard(){
+  document.getElementById('page').innerHTML=`<div class="page"><div style="text-align:center;padding:40px"><span class="spinner"></span></div></div>`;
+  const lb=await api('GET',`/api/leaderboard?term=1`);
+  const medals=['🥇','🥈','🥉'];
+  document.getElementById('page').innerHTML=`<div class="page">
+    <div class="card">
+      <div class="card-title">School leaderboard — Term 1</div>
+      ${lb.length?lb.slice(0,30).map((s,i)=>`
+        <div class="leaderboard-row">
+          <div class="rank-num" style="font-size:${i<3?20:14}px">${i<3?medals[i]:'#'+(i+1)}</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:500">${s.name}</div>
+            <div style="font-size:11px;color:#aaa">Class ${s.class} · <span class="badge b-g${s.grp}" style="font-size:10px">G${s.grp}</span></div>
+          </div>
+          <span class="badge ${s.band.cls}">${s.qq}/100</span>
+        </div>`).join(''):'<div class="empty">No results yet</div>'}
+    </div>
+  </div>`;
+}
+
+function viewStudent(id,name){
+  document.getElementById('modal-root').innerHTML=`
+    <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+      <div class="modal" style="max-width:560px">
+        <div class="modal-title">${name}</div>
+        <div id="student-detail"><span class="spinner"></span> Loading…</div>
+        <div class="modal-footer"><button class="btn" onclick="closeModal()">Close</button>
+          <button class="btn btn-primary" onclick="window.open('/api/students/${id}/report-card?term=1','_blank')">Report Card</button>
+        </div>
+      </div>
+    </div>`;
+  Promise.all([
+    api('GET',`/api/students/${id}/attempts`),
+    api('GET',`/api/students/${id}/qq?term=1`),
+  ]).then(([attempts,qq])=>{
+    const done=attempts.filter(a=>a.status==='completed');
+    document.getElementById('student-detail').innerHTML=`
+      ${qq?.qq!==null?`<div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid #e8e6e0">
+        <div style="font-size:40px;font-weight:800;color:${getBand(qq.qq).color}">${qq.qq}<span style="font-size:18px;color:#aaa">/100</span></div>
+        <div><div style="font-size:16px;font-weight:600;color:${getBand(qq.qq).color}">${getBand(qq.qq).name}</div>
+        <div style="font-size:12px;color:#888">Quiz Quotient · Term 1</div></div></div>`:'<div class="alert alert-info">No quiz results yet</div>'}
+      <div style="font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Quiz history</div>
+      ${done.map(a=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid #f0ede8">
+        <span>${a.module_name}</span>
+        <span style="font-weight:600;color:${Math.round((a.score/a.max_score)*100)>=70?'#085041':'#712B13'}">${a.score}/${a.max_score} (${Math.round((a.score/a.max_score)*100)}%)</span>
+      </div>`).join('')||'<div style="color:#aaa;font-size:13px">No quizzes completed</div>'}
+    `;
+  });
+}
+
+function addComment(id,name){
+  api('GET',`/api/students/${id}/comment?term=1`).then(d=>{
+    document.getElementById('modal-root').innerHTML=`
+      <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+        <div class="modal">
+          <div class="modal-title">Teacher comment — ${name}</div>
+          <div class="form-group">
+            <label>Comment (appears on report card)</label>
+            <textarea id="tc-text" rows="4" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:13px;resize:vertical">${d.comment||''}</textarea>
+          </div>
+          <div class="modal-footer">
+            <button class="btn" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="saveComment(${id})">Save comment</button>
+          </div>
+        </div>
+      </div>`;
+  });
+}
+async function saveComment(id){
+  const comment=document.getElementById('tc-text').value.trim();
+  await api('POST',`/api/students/${id}/comment`,{term:1,year:'2024-25',comment});
+  closeModal();
+  showToast('Comment saved');
+}
+function closeModal(){document.getElementById('modal-root').innerHTML='';}
+function showToast(msg,type='success'){
+  const d=document.createElement('div');d.className=`alert alert-${type}`;
+  d.style.cssText='position:fixed;top:16px;right:16px;z-index:9999;min-width:200px;box-shadow:0 4px 12px rgba(0,0,0,.15)';
+  d.textContent=msg;document.body.appendChild(d);setTimeout(()=>d.remove(),3500);
+}
+</script>
+</body>
+</html>

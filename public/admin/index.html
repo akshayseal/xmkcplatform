@@ -1,1 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>XM Knowledge Club — Admin</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div id="login-screen" style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#085041">
+  <div style="background:#fff;border-radius:16px;padding:40px 36px;width:100%;max-width:380px">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="font-size:36px;font-weight:800;color:#085041">XM</div>
+      <div style="font-size:13px;color:#888;margin-top:4px">Knowledge Club</div>
+      <div style="font-size:16px;font-weight:600;color:#1a1a1a;margin-top:8px">Admin Login</div>
+    </div>
+    <div id="login-error" class="alert alert-error" style="display:none"></div>
+    <div class="form-group" style="margin-bottom:14px"><label>Username</label><input id="l-user" value="admin" autocomplete="username"></div>
+    <div class="form-group" style="margin-bottom:20px"><label>Password</label><input id="l-pass" type="password" placeholder="••••••••"></div>
+    <button class="btn btn-primary" style="width:100%;background:#085041;border-color:#085041" onclick="doLogin()">Sign in</button>
+    <div style="text-align:center;margin-top:16px"><a href="/" style="font-size:12px;color:#888">← Back to portal selection</a></div>
+  </div>
+</div>
 
+<div id="app" style="display:none">
+  <div class="topbar" style="background:#085041">
+    <div style="display:flex;align-items:center">
+      <div class="topbar-logo">XM</div>
+      <div class="topbar-title">Knowledge Club — Admin</div>
+    </div>
+    <div class="topbar-right">
+      <span class="topbar-user" id="user-name"></span>
+      <button class="btn btn-sm" style="color:#fff;border-color:rgba(255,255,255,.3);background:transparent" onclick="logout()">Logout</button>
+    </div>
+  </div>
+  <div class="nav" id="nav"></div>
+  <div id="page"></div>
+</div>
+<div id="modal-root"></div>
+<div id="alert-global" style="position:fixed;top:16px;right:16px;z-index:9999;min-width:250px"></div>
+
+<script>
+let ME=null, currentTab='dashboard';
+
+async function api(method,url,body){
+  const r=await fetch(url,{method,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
+  return r.json();
+}
+async function uploadFile(url,file,field='csv',extraFields={}){
+  const fd=new FormData(); fd.append(field,file);
+  Object.entries(extraFields).forEach(([k,v])=>fd.append(k,v));
+  const r=await fetch(url,{method:'POST',body:fd}); return r.json();
+}
+async function doLogin(){
+  const username=document.getElementById('l-user').value.trim();
+  const password=document.getElementById('l-pass').value;
+  const err=document.getElementById('login-error'); err.style.display='none';
+  const d=await api('POST','/api/auth/login',{username,password,role:'admin'});
+  if(d.ok){ME=d;init();}else{err.textContent=d.error||'Login failed';err.style.display='block';}
+}
+document.addEventListener('DOMContentLoaded',async()=>{
+  document.getElementById('l-pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+  const d=await api('GET','/api/auth/me');
+  if(d.id&&d.role==='admin'){ME=d;init();}
+});
+function init(){
+  document.getElementById('login-screen').style.display='none';
+  document.getElementById('app').style.display='block';
+  document.getElementById('user-name').textContent=ME.name;
+  render();
+}
+async function logout(){await api('POST','/api/auth/logout');location.reload();}
+
+const TABS=[
+  {id:'dashboard',  label:'Dashboard',   render:renderDashboard},
+  {id:'questions',  label:'Questions',    render:renderQuestions},
+  {id:'students',   label:'Students',     render:renderStudents},
+  {id:'teachers',   label:'Teachers',     render:renderTeachers},
+  {id:'schools',    label:'Schools',      render:renderSchools},
+  {id:'modules',    label:'Modules',      render:renderModules},
+  {id:'leaderboard',label:'Leaderboard',  render:renderLeaderboard},
+  {id:'reports',    label:'Report Cards', render:renderReports},
+];
+function renderNav(){
+  document.getElementById('nav').innerHTML=TABS.map(t=>
+    `<button class="nav-btn ${t.id===currentTab?'active':''}" onclick="navigate('${t.id}')">${t.label}</button>`).join('');
+}
+function navigate(tab){currentTab=tab;render();}
+function render(){renderNav();TABS.find(t=>t.id===currentTab)?.render();}
+
+// ── DASHBOARD ──────────────────────────────────────────────────────────────────
+async function renderDashboard(){
+  setPage(`<div style="text-align:center;padding:60px"><span class="spinner"></span></div>`);
+  const stats=await api('GET','/api/stats');
+  setPage(`
+    <div class="stat-grid">
+      <div class="stat-card"><div class="stat-val">${stats.students}</div><div class="stat-lbl">Students enrolled</div></div>
+      <div class="stat-card"><div class="stat-val">${stats.teachers}</div><div class="stat-lbl">Teachers</div></div>
+      <div class="stat-card"><div class="stat-val">${stats.schools}</div><div class="stat-lbl">Schools</div></div>
+      <div class="stat-card"><div class="stat-val">${stats.quizzes_completed}</div><div class="stat-lbl">Quizzes completed</div></div>
+      <div class="stat-card"><div class="stat-val">${stats.questions}</div><div class="stat-lbl">Questions uploaded</div></div>
+      <div class="stat-card"><div class="stat-val">${stats.modules_with_questions}</div><div class="stat-lbl">Modules with questions</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Module status</div>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>#</th><th>Module</th><th>Subject</th><th>Term</th><th>Questions</th><th>Completions</th><th>Status</th><th></th></tr></thead>
+        <tbody>${stats.module_coverage.map(m=>`<tr>
+          <td style="color:#aaa">${m.id}</td>
+          <td style="font-weight:500">${m.name}</td>
+          <td style="font-size:12px;color:#888">${getSubject(m.id)}</td>
+          <td style="font-size:12px">T${m.id<=6?1:2}</td>
+          <td>${m.question_count>0?`<span style="font-weight:600;color:#085041">${m.question_count}</span>`:'<span style="color:#712B13">0 — upload needed</span>'}</td>
+          <td>${m.completions}</td>
+          <td><span class="badge ${m.quiz_open?'b-open':'b-closed'}">${m.quiz_open?'Open':'Locked'}</span></td>
+          <td><button class="btn btn-xs" onclick="toggleQuiz(${m.id},${m.quiz_open})">${m.quiz_open?'Lock':'Open'}</button></td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>`);
+}
+function getSubject(id){
+  const m={1:'History & Geography',2:'Science & Nature',3:'History & Geography',4:'Current Affairs',5:'Science & Nature',6:'Arts, Culture & Sports',7:'Current Affairs',8:'Science & Nature',9:'Arts, Culture & Sports',10:'History & Geography',11:'Science & Nature',12:'Arts, Culture & Sports'};
+  return m[id]||'';
+}
+async function toggleQuiz(id,current){
+  await api('PATCH',`/api/modules/${id}`,{quiz_open:!current});
+  showToast(`Module ${id} ${current?'locked':'opened'}`);
+  renderDashboard();
+}
+
+// ── QUESTIONS ──────────────────────────────────────────────────────────────────
+async function renderQuestions(){
+  const modules=await api('GET','/api/modules');
+  setPage(`
+    <div class="card">
+      <div class="card-title">Upload questions via CSV</div>
+      <div style="background:#fafaf8;border-radius:8px;padding:12px 14px;font-size:12px;color:#666;margin-bottom:14px;font-family:monospace">
+        module_id, question, option_a, option_b, option_c, option_d, correct, marks, time_limit_sec, grp<br>
+        1, "Who introduced the Rupiya?", "Akbar", "Sher Shah Suri", "Aurangzeb", "Babur", B, 1, 30, 0<br>
+        <span style="color:#aaa">grp: 0=all groups, 1=Group1, 2=Group2, 3=Group3 · correct: A/B/C/D</span>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <label class="btn btn-primary" style="cursor:pointer">
+          Upload CSV <input type="file" accept=".csv" style="display:none" onchange="uploadQuestions(this)">
+        </label>
+        <a href="/csv-template-questions.csv" class="btn" download>Download template</a>
+        <div id="upload-result" style="font-size:13px;color:#085041"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Questions by module</div>
+      <div class="inner-tabs" id="module-tabs">
+        ${modules.map(m=>`<button class="inner-tab" id="mtab-${m.id}" onclick="loadModuleQuestions(${m.id})">${m.id}: ${m.name.substring(0,20)}</button>`).join('')}
+      </div>
+      <div id="questions-list"><div class="empty">Select a module above</div></div>
+    </div>`);
+}
+async function uploadQuestions(input){
+  const file=input.files[0]; if(!file)return;
+  const el=document.getElementById('upload-result');
+  el.innerHTML='<span class="spinner"></span> Uploading…';
+  const d=await uploadFile('/api/questions/import',file);
+  el.innerHTML=d.ok?`<span style="color:#085041">✓ Imported ${d.imported} questions${d.errors.length?' ('+d.errors.length+' errors)':''}</span>`:
+    `<span style="color:#712B13">Error: ${d.error}</span>`;
+  input.value='';
+  if(d.errors?.length) console.warn('Import errors:',d.errors);
+}
+async function loadModuleQuestions(mid){
+  document.querySelectorAll('.inner-tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById(`mtab-${mid}`)?.classList.add('active');
+  const el=document.getElementById('questions-list');
+  el.innerHTML='<span class="spinner"></span>';
+  const qs=await api('GET',`/api/modules/${mid}/questions`);
+  if(!qs.length){el.innerHTML=`<div class="empty">No questions for this module yet. Upload a CSV above.</div>
+    <button class="btn btn-danger btn-sm" onclick="clearModuleQ(${mid})" style="margin-top:8px">Clear all</button>`;return;}
+  el.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+    <div style="font-size:13px;color:#888">${qs.length} questions</div>
+    <button class="btn btn-danger btn-sm" onclick="clearModuleQ(${mid})">Clear all for this module</button>
+  </div>
+  <div class="tbl-wrap"><table class="tbl">
+    <thead><tr><th>#</th><th>Question</th><th>A</th><th>B</th><th>C</th><th>D</th><th>Correct</th><th>Marks</th><th>Time</th><th>Group</th><th></th></tr></thead>
+    <tbody>${qs.map((q,i)=>`<tr>
+      <td style="color:#aaa">${i+1}</td>
+      <td style="max-width:240px;font-size:12px">${q.question}</td>
+      <td style="font-size:12px">${q.option_a}</td>
+      <td style="font-size:12px">${q.option_b}</td>
+      <td style="font-size:12px;color:#aaa">${q.option_c||'—'}</td>
+      <td style="font-size:12px;color:#aaa">${q.option_d||'—'}</td>
+      <td style="font-weight:700;color:#085041">${q.correct}</td>
+      <td>${q.marks}</td>
+      <td>${q.time_limit_sec}s</td>
+      <td>${q.grp==0?'All':`G${q.grp}`}</td>
+      <td><button class="btn btn-xs btn-danger" onclick="deleteQ(${q.id},${mid})">✕</button></td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
+}
+async function deleteQ(id,mid){
+  await api('DELETE',`/api/questions/${id}`);
+  loadModuleQuestions(mid);
+}
+async function clearModuleQ(mid){
+  if(!confirm('Delete ALL questions for this module?'))return;
+  await api('DELETE',`/api/modules/${mid}/questions`);
+  loadModuleQuestions(mid);
+}
+
+// ── STUDENTS ───────────────────────────────────────────────────────────────────
+async function renderStudents(){
+  const [schools,students]=await Promise.all([api('GET','/api/schools'),api('GET','/api/students')]);
+  setPage(`
+    <div class="card">
+      <div class="card-title">Add student</div>
+      <div class="form-row form-4">
+        <div class="form-group"><label>Full name</label><input id="s-name" placeholder="Arjun Sharma"></div>
+        <div class="form-group"><label>Student ID (username)</label><input id="s-user" placeholder="arjun2024"></div>
+        <div class="form-group"><label>Password</label><input id="s-pass" placeholder="xm1234" value="xm1234"></div>
+        <div class="form-group"><label>Class</label><input id="s-class" placeholder="6B"></div>
+      </div>
+      <div class="form-row form-3">
+        <div class="form-group"><label>Group</label>
+          <select id="s-grp"><option value="1">Group 1 (Cl 4–5)</option><option value="2" selected>Group 2 (Cl 6–7)</option><option value="3">Group 3 (Cl 8)</option></select></div>
+        <div class="form-group"><label>School</label>
+          <select id="s-school"><option value="">Select school</option>${schools.map(s=>`<option value="${s.id}">${s.name} — ${s.city}</option>`).join('')}</select></div>
+        <div class="form-group" style="justify-content:flex-end;padding-top:20px">
+          <button class="btn btn-primary" onclick="addStudent()">Add student</button></div>
+      </div>
+      <div style="margin-top:8px">
+        <label class="btn" style="cursor:pointer">Import students CSV
+          <input type="file" accept=".csv" style="display:none" onchange="importStudents(this)"></label>
+        <span id="import-result" style="margin-left:10px;font-size:13px"></span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">${students.length} students</div>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Name</th><th>ID</th><th>Class</th><th>Group</th><th>School</th><th>City</th><th></th></tr></thead>
+        <tbody>${students.map(s=>`<tr>
+          <td style="font-weight:500">${s.name}</td><td style="font-family:monospace;font-size:12px">${s.username}</td>
+          <td>${s.class}</td><td><span class="badge b-g${s.grp}">G${s.grp}</span></td>
+          <td>${s.school_name}</td><td>${s.city}</td>
+          <td><button class="btn btn-xs btn-danger" onclick="delStudent(${s.id},'${s.name}')">Delete</button></td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>`);
+}
+async function addStudent(){
+  const name=v('s-name'),username=v('s-user'),password=v('s-pass'),cls=v('s-class'),grp=v('s-grp'),school_id=v('s-school');
+  if(!name||!username||!cls||!school_id){showToast('Fill in all fields','error');return;}
+  const d=await api('POST','/api/students',{name,username,password,class:cls,grp:parseInt(grp),school_id:parseInt(school_id)});
+  if(d.error){showToast(d.error,'error');}else{showToast(`${name} added`);renderStudents();}
+}
+async function importStudents(input){
+  const file=input.files[0]; if(!file)return;
+  const el=document.getElementById('import-result');
+  el.innerHTML='<span class="spinner"></span>';
+  const d=await uploadFile('/api/students/import',file);
+  el.innerHTML=d.ok?`<span style="color:#085041">✓ ${d.imported} imported${d.errors.length?' ('+d.errors.length+' errors)':''}</span>`:
+    `<span style="color:#712B13">${d.error}</span>`;
+  input.value=''; if(d.ok)renderStudents();
+}
+async function delStudent(id,name){
+  if(!confirm(`Delete ${name} and all their results?`))return;
+  await api('DELETE',`/api/students/${id}`);showToast(`${name} deleted`);renderStudents();
+}
+
+// ── TEACHERS ───────────────────────────────────────────────────────────────────
+async function renderTeachers(){
+  const [schools,teachers]=await Promise.all([api('GET','/api/schools'),api('GET','/api/teachers')]);
+  setPage(`
+    <div class="card">
+      <div class="card-title">Add teacher</div>
+      <div class="form-row form-3">
+        <div class="form-group"><label>Full name</label><input id="t-name" placeholder="Ms. Priya Kumar"></div>
+        <div class="form-group"><label>Username</label><input id="t-user" placeholder="priya.kumar"></div>
+        <div class="form-group"><label>Password</label><input id="t-pass" placeholder="password" value="xmteach123"></div>
+      </div>
+      <div class="form-row form-3">
+        <div class="form-group"><label>School</label>
+          <select id="t-school"><option value="">Select school</option>${schools.map(s=>`<option value="${s.id}">${s.name} — ${s.city}</option>`).join('')}</select></div>
+        <div class="form-group"><label>Class assigned</label><input id="t-class" placeholder="6B (optional)"></div>
+        <div class="form-group" style="justify-content:flex-end;padding-top:20px">
+          <button class="btn btn-primary" onclick="addTeacher()">Add teacher</button></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">${teachers.length} teachers</div>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Name</th><th>Username</th><th>School</th><th>Class</th><th></th></tr></thead>
+        <tbody>${teachers.map(t=>`<tr>
+          <td style="font-weight:500">${t.name}</td>
+          <td style="font-family:monospace;font-size:12px">${t.username}</td>
+          <td>${t.school_name||'—'}</td><td>${t.class||'—'}</td>
+          <td><button class="btn btn-xs btn-danger" onclick="delTeacher(${t.id},'${t.name}')">Delete</button></td>
+        </tr>`).join('')||'<tr><td colspan="5" style="text-align:center;color:#aaa;padding:20px">No teachers yet</td></tr>'}</tbody>
+      </table></div>
+    </div>`);
+}
+async function addTeacher(){
+  const name=v('t-name'),username=v('t-user'),password=v('t-pass'),school_id=v('t-school'),cls=v('t-class');
+  if(!name||!username||!password){showToast('Fill in all fields','error');return;}
+  const d=await api('POST','/api/teachers',{name,username,password,school_id:parseInt(school_id)||null,class:cls||null});
+  if(d.error){showToast(d.error,'error');}else{showToast(`${name} added`);renderTeachers();}
+}
+async function delTeacher(id,name){
+  if(!confirm(`Delete teacher ${name}?`))return;
+  await api('DELETE',`/api/teachers/${id}`);showToast(`${name} deleted`);renderTeachers();
+}
+
+// ── SCHOOLS ────────────────────────────────────────────────────────────────────
+async function renderSchools(){
+  const schools=await api('GET','/api/schools');
+  setPage(`
+    <div class="card">
+      <div class="card-title">Add school</div>
+      <div class="form-row form-3">
+        <div class="form-group"><label>School name</label><input id="sc-name" placeholder="Sunrise International"></div>
+        <div class="form-group"><label>City</label><input id="sc-city" placeholder="Mumbai"></div>
+        <div class="form-group" style="justify-content:flex-end;padding-top:20px"><button class="btn btn-primary" onclick="addSchool()">Add school</button></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">${schools.length} schools</div>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>ID</th><th>Name</th><th>City</th></tr></thead>
+        <tbody>${schools.map(s=>`<tr><td style="color:#aaa">${s.id}</td><td style="font-weight:500">${s.name}</td><td>${s.city}</td></tr>`).join('')
+          ||'<tr><td colspan="3" style="text-align:center;color:#aaa;padding:20px">No schools yet</td></tr>'}</tbody>
+      </table></div>
+    </div>`);
+}
+async function addSchool(){
+  const name=v('sc-name'),city=v('sc-city');
+  if(!name||!city){showToast('Name and city required','error');return;}
+  const d=await api('POST','/api/schools',{name,city});
+  if(d.error){showToast(d.error,'error');}else{showToast(`${name} added`);renderSchools();}
+}
+
+// ── MODULES ────────────────────────────────────────────────────────────────────
+async function renderModules(){
+  const modules=await api('GET','/api/modules');
+  setPage(`<div class="card">
+    <div class="card-title">Module quiz access control</div>
+    <div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>#</th><th>Module</th><th>Term</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody>${modules.map(m=>`<tr>
+        <td style="color:#aaa">${m.id}</td>
+        <td style="font-weight:500">${m.name}</td>
+        <td>Term ${m.id<=6?1:2}</td>
+        <td><span class="badge ${m.quiz_open?'b-open':'b-closed'}">${m.quiz_open?'Open — students can attempt':'Locked — quiz hidden'}</span></td>
+        <td><button class="btn btn-sm ${m.quiz_open?'btn-danger':''}" onclick="toggleQuiz(${m.id},${m.quiz_open})">
+          ${m.quiz_open?'Lock quiz':'Open quiz'}</button></td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+  </div>`);
+}
+
+// ── LEADERBOARD ────────────────────────────────────────────────────────────────
+async function renderLeaderboard(){
+  setPage(`<div style="text-align:center;padding:60px"><span class="spinner"></span></div>`);
+  const lb=await api('GET','/api/leaderboard?term=1');
+  const medals=['🥇','🥈','🥉'];
+  setPage(`<div class="card">
+    <div class="card-title">National leaderboard — Term 1 (${lb.length} students ranked)</div>
+    ${lb.length?`<div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Rank</th><th>Student</th><th>Class</th><th>Group</th><th>School</th><th>City</th><th>QQ Score</th><th>Band</th></tr></thead>
+      <tbody>${lb.slice(0,50).map((s,i)=>`<tr>
+        <td style="font-size:${i<3?18:13}px">${i<3?medals[i]:'#'+(i+1)}</td>
+        <td style="font-weight:500">${s.name}</td><td>${s.class}</td>
+        <td><span class="badge b-g${s.grp}">G${s.grp}</span></td>
+        <td>${s.school}</td><td>${s.city}</td>
+        <td style="font-size:18px;font-weight:700;color:${s.band.color}">${s.qq}</td>
+        <td><span class="badge ${s.band.cls}">${s.band.name}</span></td>
+      </tr>`).join('')}</tbody>
+    </table></div>`:'<div class="empty">No quiz results yet across any school</div>'}
+  </div>`);
+}
+
+// ── REPORT CARDS ───────────────────────────────────────────────────────────────
+async function renderReports(){
+  const students=await api('GET','/api/students');
+  setPage(`<div class="card">
+    <div class="card-title">Generate report cards</div>
+    <p style="font-size:13px;color:#666;margin-bottom:14px">Click a student's name to open their printable report card in a new tab.</p>
+    <div class="form-row form-2" style="margin-bottom:14px">
+      <div class="form-group"><label>Filter by school</label>
+        <select onchange="filterReports(this.value)" id="rf-school">
+          <option value="">All schools</option>
+          ${[...new Set(students.map(s=>s.school_name))].map(s=>`<option value="${s}">${s}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label>Term</label>
+        <select id="rf-term"><option value="1">Term 1</option><option value="2">Term 2</option></select>
+      </div>
+    </div>
+    <div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Student</th><th>Class</th><th>School</th><th>Term 1</th><th>Term 2</th></tr></thead>
+      <tbody id="reports-tbody">${students.map(s=>`<tr>
+        <td style="font-weight:500">${s.name}</td><td>${s.class}</td><td>${s.school_name}</td>
+        <td><a href="/api/students/${s.id}/report-card?term=1" target="_blank" class="btn btn-xs">Open PDF</a></td>
+        <td><a href="/api/students/${s.id}/report-card?term=2" target="_blank" class="btn btn-xs">Open PDF</a></td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+  </div>`);
+}
+
+// ── HELPERS ────────────────────────────────────────────────────────────────────
+function setPage(html){ document.getElementById('page').innerHTML=`<div class="page">${html}</div>`; }
+function v(id){ return document.getElementById(id)?.value?.trim()||''; }
+function closeModal(){ document.getElementById('modal-root').innerHTML=''; }
+function showToast(msg,type='success'){
+  const d=document.createElement('div');d.className=`alert alert-${type}`;
+  d.style.cssText='position:fixed;top:16px;right:16px;z-index:9999;min-width:250px;box-shadow:0 4px 12px rgba(0,0,0,.15)';
+  d.textContent=msg;document.body.appendChild(d);setTimeout(()=>d.remove(),3500);
+}
+</script>
+</body>
+</html>
